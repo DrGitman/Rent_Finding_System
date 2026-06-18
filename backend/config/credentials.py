@@ -21,6 +21,9 @@ class APICredentials(BaseSettings):
     facebook_business_account_id: Optional[str] = Field(
         default=None, env="FACEBOOK_BUSINESS_ACCOUNT_ID"
     )
+    # Facebook login credentials for Playwright scraping (optional but gives full access)
+    facebook_email: Optional[str] = Field(default=None, env="FACEBOOK_EMAIL")
+    facebook_password: Optional[str] = Field(default=None, env="FACEBOOK_PASSWORD")
 
     # WhatsApp Business API
     whatsapp_business_phone: Optional[str] = Field(
