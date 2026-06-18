@@ -65,6 +65,21 @@ services:
     labels:
       com.docker.compose.project: "rentscout"
 
+  whatsapp-service:
+    build:
+      context: ./whatsapp-service
+      dockerfile: Dockerfile
+    container_name: rentscout-whatsapp
+    ports:
+      - "3001:3001"
+    volumes:
+      - whatsapp_session:/app/session
+    networks:
+      - rentscout_network
+    restart: unless-stopped
+    labels:
+      com.docker.compose.project: "rentscout"
+
   backend:
     build:
       context: ./backend
@@ -110,3 +125,4 @@ volumes:
   postgres_data:
   redis_data:
   n8n_data:
+  whatsapp_session:
