@@ -1,6 +1,6 @@
 {
   "name": "Rental Listing Scanner",
-  "description": "Scans multiple rental sources (Zillow, Apartments.com, Craigslist, Facebook Marketplace) and collects listings",
+  "description": "Scans Zillow, Apartments.com, Craigslist, Facebook Marketplace (real browser), and WhatsApp groups",
   "nodes": [
     {
       "name": "Webhook Trigger",
@@ -25,7 +25,15 @@
           "string": [
             {
               "name": "city",
-              "stringValue": "={{$json.city || 'San Francisco'}}"
+              "stringValue": "={{$json.city || 'Brooklyn'}}"
+            },
+            {
+              "name": "city_id",
+              "stringValue": "={{$json.city_id || ''}}"
+            },
+            {
+              "name": "query",
+              "stringValue": "={{$json.query || 'rent'}}"
             },
             {
               "name": "agent_id",
@@ -43,30 +51,19 @@
       "name": "Scan Zillow",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [750, 150],
+      "position": [750, 100],
       "parameters": {
         "method": "POST",
         "url": "http://backend:8000/api/scrapers/zillow",
         "sendHeaders": true,
         "headerParameters": {
-          "parameters": [
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
+          "parameters": [{"name": "Content-Type", "value": "application/json"}]
         },
         "sendBody": true,
         "bodyParameters": {
           "parameters": [
-            {
-              "name": "city",
-              "value": "={{$node['Extract Parameters'].json.city}}"
-            },
-            {
-              "name": "max_pages",
-              "value": 2
-            }
+            {"name": "city", "value": "={{$node['Extract Parameters'].json.city}}"},
+            {"name": "max_pages", "value": 2}
           ]
         }
       }
@@ -75,26 +72,18 @@
       "name": "Scan Apartments.com",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [750, 250],
+      "position": [750, 220],
       "parameters": {
         "method": "POST",
         "url": "http://backend:8000/api/scrapers/apartments",
         "sendHeaders": true,
         "headerParameters": {
-          "parameters": [
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
+          "parameters": [{"name": "Content-Type", "value": "application/json"}]
         },
         "sendBody": true,
         "bodyParameters": {
           "parameters": [
-            {
-              "name": "city",
-              "value": "={{$node['Extract Parameters'].json.city}}"
-            }
+            {"name": "city", "value": "={{$node['Extract Parameters'].json.city}}"}
           ]
         }
       }
@@ -103,26 +92,18 @@
       "name": "Scan Craigslist",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [750, 350],
+      "position": [750, 340],
       "parameters": {
         "method": "POST",
         "url": "http://backend:8000/api/scrapers/craigslist",
         "sendHeaders": true,
         "headerParameters": {
-          "parameters": [
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
+          "parameters": [{"name": "Content-Type", "value": "application/json"}]
         },
         "sendBody": true,
         "bodyParameters": {
           "parameters": [
-            {
-              "name": "city",
-              "value": "={{$node['Extract Parameters'].json.city}}"
-            }
+            {"name": "city", "value": "={{$node['Extract Parameters'].json.city}}"}
           ]
         }
       }
@@ -131,26 +112,43 @@
       "name": "Scan Facebook Marketplace",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [750, 450],
+      "position": [750, 460],
       "parameters": {
         "method": "POST",
         "url": "http://backend:8000/api/scrapers/facebook",
         "sendHeaders": true,
         "headerParameters": {
-          "parameters": [
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
+          "parameters": [{"name": "Content-Type", "value": "application/json"}]
         },
         "sendBody": true,
         "bodyParameters": {
           "parameters": [
-            {
-              "name": "city",
-              "value": "={{$node['Extract Parameters'].json.city}}"
-            }
+            {"name": "city", "value": "={{$node['Extract Parameters'].json.city}}"},
+            {"name": "city_id", "value": "={{$node['Extract Parameters'].json.city_id}}"},
+            {"name": "query", "value": "={{$node['Extract Parameters'].json.query}}"},
+            {"name": "max_listings", "value": 30}
+          ]
+        }
+      }
+    },
+    {
+      "name": "Scan WhatsApp Groups",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [750, 580],
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/scrapers/whatsapp-groups",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{"name": "Content-Type", "value": "application/json"}]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "keywords", "value": "[\"rent\",\"flat\",\"room\",\"house\",\"accommodation\",\"apartment\",\"available\",\"to let\"]"},
+            {"name": "search_terms", "value": "[\"rent\",\"accommodation\",\"flat\",\"room\"]"},
+            {"name": "days_back", "value": 7}
           ]
         }
       }
@@ -159,48 +157,37 @@
       "name": "Combine Results",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1000, 300],
+      "position": [1050, 340],
       "parameters": {
-        "jsCode": "function toArray(val) {\n  if (!val) return [];\n  if (Array.isArray(val)) return val;\n  if (val.listings && Array.isArray(val.listings)) return val.listings;\n  if (val.data && Array.isArray(val.data)) return val.data;\n  return [];\n}\n\nconst zillow = toArray($node['Scan Zillow'].json);\nconst apartments = toArray($node['Scan Apartments.com'].json);\nconst craigslist = toArray($node['Scan Craigslist'].json);\nconst facebook = toArray($node['Scan Facebook Marketplace'].json);\n\nconst allListings = [\n  ...zillow,\n  ...apartments,\n  ...craigslist,\n  ...facebook\n];\n\nreturn {\n  listings: allListings,\n  total_count: allListings.length,\n  timestamp: new Date().toISOString()\n};"
+        "jsCode": "function toArray(val) {\n  if (!val) return [];\n  if (Array.isArray(val)) return val;\n  if (val.listings && Array.isArray(val.listings)) return val.listings;\n  if (val.data && Array.isArray(val.data)) return val.data;\n  return [];\n}\n\nconst zillow = toArray($node['Scan Zillow'].json);\nconst apartments = toArray($node['Scan Apartments.com'].json);\nconst craigslist = toArray($node['Scan Craigslist'].json);\nconst facebook = toArray($node['Scan Facebook Marketplace'].json);\nconst whatsapp = toArray($node['Scan WhatsApp Groups'].json);\n\nconst allListings = [\n  ...zillow,\n  ...apartments,\n  ...craigslist,\n  ...facebook,\n  ...whatsapp\n];\n\nconst sources = {\n  zillow: zillow.length,\n  apartments: apartments.length,\n  craigslist: craigslist.length,\n  facebook: facebook.length,\n  whatsapp: whatsapp.length\n};\n\nreturn {\n  listings: allListings,\n  total_count: allListings.length,\n  sources: sources,\n  timestamp: new Date().toISOString()\n};"
       }
     },
     {
       "name": "Filter Duplicates",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1250, 300],
+      "position": [1300, 340],
       "parameters": {
-        "jsCode": "const listings = $json.listings || [];\nconst seen = new Set();\nconst unique = [];\n\nfor (const listing of listings) {\n  const key = `${listing.price}-${listing.address}-${listing.source}`;\n  if (!seen.has(key)) {\n    seen.add(key);\n    unique.push(listing);\n  }\n}\n\nreturn {\n  listings: unique,\n  total_count: unique.length,\n  duplicates_removed: listings.length - unique.length\n};"
+        "jsCode": "const listings = $json.listings || [];\nconst seen = new Set();\nconst unique = [];\n\nfor (const listing of listings) {\n  const key = `${listing.price}-${(listing.address||'').trim().toLowerCase()}-${listing.source}`;\n  if (!seen.has(key)) {\n    seen.add(key);\n    unique.push(listing);\n  }\n}\n\nreturn {\n  listings: unique,\n  total_count: unique.length,\n  duplicates_removed: listings.length - unique.length,\n  sources: $json.sources || {}\n};"
       }
     },
     {
       "name": "Store Results",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1500, 300],
+      "position": [1550, 340],
       "parameters": {
         "method": "POST",
         "url": "http://backend:8000/api/scrapers/listings/batch",
         "sendHeaders": true,
         "headerParameters": {
-          "parameters": [
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
+          "parameters": [{"name": "Content-Type", "value": "application/json"}]
         },
         "sendBody": true,
         "bodyParameters": {
           "parameters": [
-            {
-              "name": "listings",
-              "value": "={{$json.listings}}"
-            },
-            {
-              "name": "agent_id",
-              "value": "={{$node['Extract Parameters'].json.agent_id}}"
-            }
+            {"name": "listings", "value": "={{$json.listings}}"},
+            {"name": "agent_id", "value": "={{$node['Extract Parameters'].json.agent_id}}"}
           ]
         }
       }
@@ -209,7 +196,7 @@
       "name": "Send Webhook Response",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 3,
-      "position": [1750, 300],
+      "position": [1800, 340],
       "parameters": {
         "responseData": "first",
         "responseContentType": "application/json"
@@ -225,7 +212,8 @@
         {"node": "Scan Zillow", "type": "main", "index": 0},
         {"node": "Scan Apartments.com", "type": "main", "index": 0},
         {"node": "Scan Craigslist", "type": "main", "index": 0},
-        {"node": "Scan Facebook Marketplace", "type": "main", "index": 0}
+        {"node": "Scan Facebook Marketplace", "type": "main", "index": 0},
+        {"node": "Scan WhatsApp Groups", "type": "main", "index": 0}
       ]]
     },
     "Scan Zillow": {
@@ -238,6 +226,9 @@
       "main": [[{"node": "Combine Results", "type": "main", "index": 0}]]
     },
     "Scan Facebook Marketplace": {
+      "main": [[{"node": "Combine Results", "type": "main", "index": 0}]]
+    },
+    "Scan WhatsApp Groups": {
       "main": [[{"node": "Combine Results", "type": "main", "index": 0}]]
     },
     "Combine Results": {

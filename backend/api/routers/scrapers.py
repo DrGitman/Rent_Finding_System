@@ -90,16 +90,20 @@ async def scrape_facebook_marketplace(
     data: Dict[str, Any],
     db: Session = Depends(get_db)
 ):
-    """Scrape Facebook Marketplace for rental listings"""
+    """Scrape Facebook Marketplace using Playwright browser automation"""
     try:
-        city = data.get("city", "San Francisco")
-        keywords = data.get("keywords", ["rental", "apartment", "house"])
-        
+        city = data.get("city", "")
+        city_id = data.get("city_id")          # optional explicit FB location ID
+        query = data.get("query", "rent")
+        max_listings = data.get("max_listings", 30)
+
         listings = await fb_integration.search_listings(
-            query="rental",
-            location=city
+            query=query,
+            city=city,
+            city_id=city_id,
+            max_listings=max_listings,
         )
-        
+
         return {
             "success": True,
             "source": "facebook_marketplace",
