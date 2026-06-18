@@ -1,0 +1,112 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: rentscout-postgres
+    environment:
+      POSTGRES_USER: rentscout
+      POSTGRES_PASSWORD: rentscout
+      POSTGRES_DB: rentscout_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - rentscout_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rentscout"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    labels:
+      com.docker.compose.project: "rentscout"
+
+  redis:
+    image: redis:7-alpine
+    container_name: rentscout-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - rentscout_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    labels:
+      com.docker.compose.project: "rentscout"
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: rentscout-n8n
+    environment:
+      - DB_TYPE=sqlite
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678/
+      - GENERIC_TIMEZONE=UTC
+      - N8N_EDITOR_BASE_URL=http://localhost:5678/
+    ports:
+      - "5678:5678"
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - rentscout_network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5678/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    labels:
+      com.docker.compose.project: "rentscout"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: rentscout-backend
+    environment:
+      DATABASE_URL: postgresql://rentscout:rentscout@postgres:5432/rentscout_db
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: rentscout_db
+      DB_USER: rentscout
+      DB_PASSWORD: rentscout
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: your-secret-key-change-in-production
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+      REFRESH_TOKEN_EXPIRE_DAYS: 7
+      N8N_WEBHOOK_URL: http://n8n:5678/webhook
+      N8N_API_URL: http://n8n:5678/api/v1
+      ALLOWED_ORIGINS: http://localhost:3000,http://localhost:3001
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      n8n:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    networks:
+      - rentscout_network
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    labels:
+      com.docker.compose.project: "rentscout"
+
+networks:
+  rentscout_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  n8n_data:

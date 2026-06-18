@@ -1,0 +1,255 @@
+{
+  "name": "Scam Detector",
+  "description": "Detects potentially fraudulent rental listings using AI analysis and red flag detection",
+  "nodes": [
+    {
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "webhookId": "scam_detector",
+      "parameters": {
+        "path": "scam-detector",
+        "httpMethod": "POST",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "name": "Extract Listing",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [500, 300],
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": [
+            {
+              "name": "listing_id",
+              "stringValue": "={{$json.listing_id}}"
+            },
+            {
+              "name": "title",
+              "stringValue": "={{$json.title}}"
+            },
+            {
+              "name": "description",
+              "stringValue": "={{$json.description}}"
+            },
+            {
+              "name": "price",
+              "stringValue": "={{$json.price}}"
+            },
+            {
+              "name": "address",
+              "stringValue": "={{$json.address}}"
+            },
+            {
+              "name": "source",
+              "stringValue": "={{$json.source}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Check Red Flags",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [750, 300],
+      "parameters": {
+        "jsCode": "const text = ($node['Extract Listing'].json.title + ' ' + $node['Extract Listing'].json.description).toLowerCase();\nconst price = parseInt($node['Extract Listing'].json.price);\n\nlet redFlags = [];\nlet riskScore = 0;\n\n// Price too low (below market)\nif (price < 300) {\n  redFlags.push('Price unusually low');\n  riskScore += 25;\n}\n\n// Too good to be true\nif (text.includes('too good') || text.includes('amazing deal')) {\n  redFlags.push('Too good to be true language');\n  riskScore += 20;\n}\n\n// Wire transfer only\nif (text.includes('wire transfer') || text.includes('money order only')) {\n  redFlags.push('Suspicious payment methods');\n  riskScore += 30;\n}\n\n// No photos\nif (text.includes('no photos') || text.includes('no pictures')) {\n  redFlags.push('No photos provided');\n  riskScore += 15;\n}\n\n// Urgent/pressure language\nif (text.includes('urgent') || text.includes('asap') || text.includes('hurry')) {\n  redFlags.push('Urgency language');\n  riskScore += 15;\n}\n\n// Generic listing\nif (text.length < 50) {\n  redFlags.push('Very short description');\n  riskScore += 10;\n}\n\n// Broken English patterns\nconst brokenEnglishPatterns = /th[ei] (quick|fast)|beutiful|beautifull|apartement|neigborhood|availble/i;\nif (brokenEnglishPatterns.test(text)) {\n  redFlags.push('Suspicious language patterns');\n  riskScore += 10;\n}\n\n// Contact suspicious\nif (text.includes('no calls') && text.includes('email only')) {\n  redFlags.push('Suspicious contact restrictions');\n  riskScore += 20;\n}\n\nreturn {\n  red_flags: redFlags,\n  risk_score: Math.min(100, riskScore),\n  flag_count: redFlags.length\n};"
+      }
+    },
+    {
+      "name": "Verify Address",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1000, 150],
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/validators/address",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "address",
+              "value": "={{$node['Extract Listing'].json.address}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Check Owner Reputation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1000, 450],
+      "parameters": {
+        "method": "GET",
+        "url": "http://backend:8000/api/validators/reputation?source={{$node['Extract Listing'].json.source}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Combine Risk Assessment",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300],
+      "parameters": {
+        "jsCode": "const redFlagData = $node['Check Red Flags'].json;\nconst addressData = $node['Verify Address'].json;\nconst reputationData = $node['Check Owner Reputation'].json;\n\nlet totalRisk = redFlagData.risk_score;\n\n// Address verification\nif (addressData.is_valid === false) {\n  totalRisk += 25;\n} else if (addressData.is_residential === false) {\n  totalRisk += 10;\n}\n\n// Owner reputation\nif (reputationData.reported_count > 3) {\n  totalRisk += 20;\n}\nif (reputationData.avg_rating < 2.5) {\n  totalRisk += 15;\n}\n\nconst scamRisk = Math.min(100, totalRisk);\nconst isLikelyScam = scamRisk > 70;\n\nreturn {\n  listing_id: $node['Extract Listing'].json.listing_id,\n  scam_risk: Math.round(scamRisk),\n  is_likely_scam: isLikelyScam,\n  red_flags: redFlagData.red_flags,\n  address_valid: addressData.is_valid !== false,\n  owner_reputation: reputationData.avg_rating,\n  total_risk_factors: redFlagData.flag_count + (addressData.is_valid === false ? 1 : 0) + (reputationData.reported_count > 0 ? 1 : 0)\n};"
+      }
+    },
+    {
+      "name": "Save Scam Assessment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1500, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/listings/{{$node['Combine Risk Assessment'].json.listing_id}}/scam-check",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "scam_risk",
+              "value": "={{$node['Combine Risk Assessment'].json.scam_risk}}"
+            },
+            {
+              "name": "red_flags",
+              "value": "={{$node['Combine Risk Assessment'].json.red_flags}}"
+            },
+            {
+              "name": "is_likely_scam",
+              "value": "={{$node['Combine Risk Assessment'].json.is_likely_scam}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Create Alert if Scam",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1750, 300],
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$node['Combine Risk Assessment'].json.is_likely_scam}}",
+              "operation": "true"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Send Scam Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2000, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/webhooks/scam-alert",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "listing_id",
+              "value": "={{$node['Combine Risk Assessment'].json.listing_id}}"
+            },
+            {
+              "name": "scam_risk",
+              "value": "={{$node['Combine Risk Assessment'].json.scam_risk}}"
+            },
+            {
+              "name": "red_flags",
+              "value": "={{$node['Combine Risk Assessment'].json.red_flags}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Send Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 3,
+      "position": [2000, 400],
+      "parameters": {
+        "responseData": "first"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[{"node": "Extract Listing", "type": "main", "index": 0}]]
+    },
+    "Extract Listing": {
+      "main": [[
+        {"node": "Check Red Flags", "type": "main", "index": 0},
+        {"node": "Verify Address", "type": "main", "index": 0},
+        {"node": "Check Owner Reputation", "type": "main", "index": 0}
+      ]]
+    },
+    "Check Red Flags": {
+      "main": [[{"node": "Combine Risk Assessment", "type": "main", "index": 0}]]
+    },
+    "Verify Address": {
+      "main": [[{"node": "Combine Risk Assessment", "type": "main", "index": 0}]]
+    },
+    "Check Owner Reputation": {
+      "main": [[{"node": "Combine Risk Assessment", "type": "main", "index": 0}]]
+    },
+    "Combine Risk Assessment": {
+      "main": [[
+        {"node": "Save Scam Assessment", "type": "main", "index": 0}
+      ]]
+    },
+    "Save Scam Assessment": {
+      "main": [[{"node": "Create Alert if Scam", "type": "main", "index": 0}]]
+    },
+    "Create Alert if Scam": {
+      "main": [
+        [{"node": "Send Scam Alert", "type": "main", "index": 0}],
+        [{"node": "Send Response", "type": "main", "index": 0}]
+      ]
+    },
+    "Send Scam Alert": {
+      "main": [[{"node": "Send Response", "type": "main", "index": 0}]]
+    }
+  }
+}

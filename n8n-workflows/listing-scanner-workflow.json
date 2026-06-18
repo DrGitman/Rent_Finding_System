@@ -1,0 +1,253 @@
+{
+  "name": "Rental Listing Scanner",
+  "description": "Scans multiple rental sources (Zillow, Apartments.com, Craigslist, Facebook Marketplace) and collects listings",
+  "nodes": [
+    {
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "webhookId": "rental_scanner",
+      "parameters": {
+        "path": "rental-scanner",
+        "httpMethod": "POST",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "name": "Extract Parameters",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [500, 300],
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": [
+            {
+              "name": "city",
+              "stringValue": "={{$json.city || 'San Francisco'}}"
+            },
+            {
+              "name": "agent_id",
+              "stringValue": "={{$json.agent_id}}"
+            },
+            {
+              "name": "activity_id",
+              "stringValue": "={{$json.activity_id}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Scan Zillow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [750, 150],
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/scrapers/zillow",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "city",
+              "value": "={{$node['Extract Parameters'].json.city}}"
+            },
+            {
+              "name": "max_pages",
+              "value": 2
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Scan Apartments.com",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [750, 250],
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/scrapers/apartments",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "city",
+              "value": "={{$node['Extract Parameters'].json.city}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Scan Craigslist",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [750, 350],
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/scrapers/craigslist",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "city",
+              "value": "={{$node['Extract Parameters'].json.city}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Scan Facebook Marketplace",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [750, 450],
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/scrapers/facebook",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "city",
+              "value": "={{$node['Extract Parameters'].json.city}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Combine Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 300],
+      "parameters": {
+        "jsCode": "function toArray(val) {\n  if (!val) return [];\n  if (Array.isArray(val)) return val;\n  if (val.listings && Array.isArray(val.listings)) return val.listings;\n  if (val.data && Array.isArray(val.data)) return val.data;\n  return [];\n}\n\nconst zillow = toArray($node['Scan Zillow'].json);\nconst apartments = toArray($node['Scan Apartments.com'].json);\nconst craigslist = toArray($node['Scan Craigslist'].json);\nconst facebook = toArray($node['Scan Facebook Marketplace'].json);\n\nconst allListings = [\n  ...zillow,\n  ...apartments,\n  ...craigslist,\n  ...facebook\n];\n\nreturn {\n  listings: allListings,\n  total_count: allListings.length,\n  timestamp: new Date().toISOString()\n};"
+      }
+    },
+    {
+      "name": "Filter Duplicates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300],
+      "parameters": {
+        "jsCode": "const listings = $json.listings || [];\nconst seen = new Set();\nconst unique = [];\n\nfor (const listing of listings) {\n  const key = `${listing.price}-${listing.address}-${listing.source}`;\n  if (!seen.has(key)) {\n    seen.add(key);\n    unique.push(listing);\n  }\n}\n\nreturn {\n  listings: unique,\n  total_count: unique.length,\n  duplicates_removed: listings.length - unique.length\n};"
+      }
+    },
+    {
+      "name": "Store Results",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1500, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/scrapers/listings/batch",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "listings",
+              "value": "={{$json.listings}}"
+            },
+            {
+              "name": "agent_id",
+              "value": "={{$node['Extract Parameters'].json.agent_id}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Send Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 3,
+      "position": [1750, 300],
+      "parameters": {
+        "responseData": "first",
+        "responseContentType": "application/json"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[{"node": "Extract Parameters", "type": "main", "index": 0}]]
+    },
+    "Extract Parameters": {
+      "main": [[
+        {"node": "Scan Zillow", "type": "main", "index": 0},
+        {"node": "Scan Apartments.com", "type": "main", "index": 0},
+        {"node": "Scan Craigslist", "type": "main", "index": 0},
+        {"node": "Scan Facebook Marketplace", "type": "main", "index": 0}
+      ]]
+    },
+    "Scan Zillow": {
+      "main": [[{"node": "Combine Results", "type": "main", "index": 0}]]
+    },
+    "Scan Apartments.com": {
+      "main": [[{"node": "Combine Results", "type": "main", "index": 0}]]
+    },
+    "Scan Craigslist": {
+      "main": [[{"node": "Combine Results", "type": "main", "index": 0}]]
+    },
+    "Scan Facebook Marketplace": {
+      "main": [[{"node": "Combine Results", "type": "main", "index": 0}]]
+    },
+    "Combine Results": {
+      "main": [[{"node": "Filter Duplicates", "type": "main", "index": 0}]]
+    },
+    "Filter Duplicates": {
+      "main": [[{"node": "Store Results", "type": "main", "index": 0}]]
+    },
+    "Store Results": {
+      "main": [[{"node": "Send Webhook Response", "type": "main", "index": 0}]]
+    }
+  }
+}
