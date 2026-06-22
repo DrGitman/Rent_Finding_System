@@ -2,14 +2,16 @@
 
 import { useState } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { AlertCircle, Loader2, Check } from "lucide-react"
+import { AlertCircle, Loader2, Check, Eye, EyeOff } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Checkbox } from "@/components/ui/checkbox"
+import { toast } from "sonner"
 
 export default function SignupPage() {
   const router = useRouter()
@@ -20,6 +22,8 @@ export default function SignupPage() {
   const [acceptTerms, setAcceptTerms] = useState(false)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
   const validatePassword = (pwd: string) => {
     return pwd.length >= 8 && /[A-Z]/.test(pwd) && /[0-9]/.test(pwd)
@@ -61,15 +65,20 @@ export default function SignupPage() {
 
       const data = await response.json()
 
-      // Store tokens
+      // Store tokens in localStorage + cookie (cookie used by middleware)
       localStorage.setItem("rs_token", data.access_token)
       localStorage.setItem("rs_refresh_token", data.refresh_token)
       if (data.user) {
         localStorage.setItem("rs_user_id", String(data.user.id))
         localStorage.setItem("rs_user_email", data.user.email)
+        if (data.user.full_name || fullName) {
+          localStorage.setItem("rs_user_name", data.user.full_name ?? fullName)
+        }
       }
+      document.cookie = `rs_token=${data.access_token}; path=/; max-age=1800; SameSite=Lax`
 
-      // Redirect to onboarding
+      const firstName = (data.user?.full_name ?? fullName)?.split(" ")[0] ?? "there"
+      toast.success(`Welcome, ${firstName}!`, { description: "Account created — let's set up your preferences." })
       router.push("/onboarding")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed")
@@ -84,11 +93,21 @@ export default function SignupPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
-        <CardHeader className="space-y-2">
-          <CardTitle className="text-2xl">Get Started</CardTitle>
-          <CardDescription>
-            Create your Rent Scout account
-          </CardDescription>
+        <CardHeader className="space-y-4 items-center text-center pb-2">
+          <div style={{ width: 140 }}>
+            <Image
+              src="/images/logo-orange.png"
+              alt="Rent Scout"
+              width={196}
+              height={217}
+              style={{ width: "100%", height: "auto" }}
+              loading="eager"
+            />
+          </div>
+          <div>
+            <CardTitle className="text-2xl">Get Started</CardTitle>
+            <CardDescription>Create your Rent Scout account</CardDescription>
+          </div>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -127,15 +146,26 @@ export default function SignupPage() {
 
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                disabled={loading}
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  disabled={loading}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
               <div className="text-xs space-y-1">
                 <div className={`flex items-center gap-2 ${password.length >= 8 ? 'text-green-600' : 'text-slate-400'}`}>
                   <Check className="h-3 w-3" />
@@ -154,15 +184,26 @@ export default function SignupPage() {
 
             <div className="space-y-2">
               <Label htmlFor="confirmPassword">Confirm Password</Label>
-              <Input
-                id="confirmPassword"
-                type="password"
-                placeholder="••••••••"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                disabled={loading}
-              />
+              <div className="relative">
+                <Input
+                  id="confirmPassword"
+                  type={showConfirmPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  disabled={loading}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                  tabIndex={-1}
+                >
+                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
               {confirmPassword && (
                 <div className={`text-xs ${passwordsMatch ? 'text-green-600' : 'text-red-600'}`}>
                   {passwordsMatch ? "✓ Passwords match" : "✗ Passwords don't match"}
@@ -182,8 +223,8 @@ export default function SignupPage() {
                 className="text-sm text-slate-600 dark:text-slate-400 cursor-pointer"
               >
                 I agree to the{" "}
-                <Link href="/terms" className="text-blue-600 hover:underline dark:text-blue-400">
-                  terms and conditions
+                <Link href="/terms" className="text-orange-500 hover:underline dark:text-orange-400">
+                  Terms and Conditions
                 </Link>
               </label>
             </div>
@@ -206,7 +247,7 @@ export default function SignupPage() {
 
           <p className="mt-4 text-center text-sm text-slate-600 dark:text-slate-400">
             Already have an account?{" "}
-            <Link href="/auth" className="text-blue-600 hover:underline dark:text-blue-400">
+            <Link href="/auth" className="text-orange-500 hover:underline dark:text-orange-400">
               Sign in
             </Link>
           </p>

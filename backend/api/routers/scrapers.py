@@ -5,6 +5,13 @@ from models.models import User, SavedListing, AIAgent
 from integrations.property_scraper import property_scraper
 from integrations.facebook_marketplace import fb_integration
 from integrations.whatsapp_integration import whatsapp_integration
+from integrations.namibia_scrapers import (
+    scrape_property24,
+    scrape_propertynews,
+    scrape_myproperty,
+    scrape_rightmove_windhoek,
+    scrape_all_namibia,
+)
 from typing import List, Dict, Any
 import asyncio
 
@@ -146,6 +153,128 @@ async def search_whatsapp_groups(
             "error": str(e),
             "listings": []
         }
+
+@router.post("/property24")
+async def scrape_property24_endpoint(
+    data: Dict[str, Any],
+    db: Session = Depends(get_db)
+):
+    """Scrape Property24 Namibia for rental listings"""
+    try:
+        city = data.get("city", "windhoek")
+        max_pages = data.get("max_pages", 2)
+        listings = await scrape_property24(city, max_pages)
+        return {"success": True, "source": "property24_na", "listings": listings, "count": len(listings)}
+    except Exception as e:
+        return {"success": False, "error": str(e), "listings": []}
+
+
+@router.post("/propertynews")
+async def scrape_propertynews_endpoint(
+    data: Dict[str, Any],
+    db: Session = Depends(get_db)
+):
+    """Scrape PropertyNews Namibia for rental listings"""
+    try:
+        city = data.get("city", "windhoek")
+        max_pages = data.get("max_pages", 2)
+        listings = await scrape_propertynews(city, max_pages)
+        return {"success": True, "source": "propertynews_na", "listings": listings, "count": len(listings)}
+    except Exception as e:
+        return {"success": False, "error": str(e), "listings": []}
+
+
+@router.post("/myproperty")
+async def scrape_myproperty_endpoint(
+    data: Dict[str, Any],
+    db: Session = Depends(get_db)
+):
+    """Scrape MyProperty Namibia for rental listings"""
+    try:
+        city = data.get("city", "windhoek")
+        max_pages = data.get("max_pages", 2)
+        listings = await scrape_myproperty(city, max_pages)
+        return {"success": True, "source": "myproperty_na", "listings": listings, "count": len(listings)}
+    except Exception as e:
+        return {"success": False, "error": str(e), "listings": []}
+
+
+@router.post("/rightmove")
+async def scrape_rightmove_endpoint(
+    data: Dict[str, Any],
+    db: Session = Depends(get_db)
+):
+    """Scrape Right Move Properties Windhoek for rental listings"""
+    try:
+        max_pages = data.get("max_pages", 2)
+        listings = await scrape_rightmove_windhoek(max_pages)
+        return {"success": True, "source": "rightmove_windhoek", "listings": listings, "count": len(listings)}
+    except Exception as e:
+        return {"success": False, "error": str(e), "listings": []}
+
+
+@router.post("/namibia")
+async def scrape_all_namibia_endpoint(
+    data: Dict[str, Any],
+    db: Session = Depends(get_db)
+):
+    """Scrape all Namibian property sites at once and optionally store results"""
+    try:
+        city = data.get("city", "windhoek")
+        max_pages = data.get("max_pages", 2)
+        agent_id = data.get("agent_id")
+        user_id = data.get("user_id")
+        store = data.get("store", False)
+
+        listings = await scrape_all_namibia(city, max_pages)
+
+        if store:
+            # Resolve user_id from agent if not provided directly
+            if not user_id and agent_id:
+                agent = db.query(AIAgent).filter(AIAgent.id == agent_id).first()
+                if agent:
+                    user_id = agent.user_id
+
+            saved_count = 0
+            for listing_data in listings:
+                try:
+                    listing_id_val = listing_data.get("listing_id", "")
+                    existing = db.query(SavedListing).filter(
+                        SavedListing.listing_id == listing_id_val
+                    ).first()
+                    if not existing:
+                        existing = db.query(SavedListing).filter(
+                            SavedListing.title == listing_data.get("title"),
+                            SavedListing.price == listing_data.get("price")
+                        ).first()
+
+                    if not existing:
+                        saved = SavedListing(
+                            user_id=user_id,
+                            listing_id=listing_id_val,
+                            title=listing_data.get("title", ""),
+                            price=listing_data.get("price", 0),
+                            source=listing_data.get("source", "unknown"),
+                            url=listing_data.get("url", ""),
+                            image_url=listing_data.get("image_url", ""),
+                            notes=f"Discovered via agent {agent_id}" if agent_id else None
+                        )
+                        db.add(saved)
+                        saved_count += 1
+                except Exception:
+                    continue
+            db.commit()
+            return {
+                "success": True,
+                "listings": listings,
+                "count": len(listings),
+                "saved_count": saved_count,
+            }
+
+        return {"success": True, "listings": listings, "count": len(listings)}
+    except Exception as e:
+        return {"success": False, "error": str(e), "listings": []}
+
 
 @router.post("/listings/batch")
 async def store_batch_listings(

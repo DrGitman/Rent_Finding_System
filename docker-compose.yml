@@ -65,6 +65,27 @@ services:
     labels:
       com.docker.compose.project: "rentscout"
 
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: rentscout-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NODE_ENV=development
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - backend
+    networks:
+      - rentscout_network
+    labels:
+      com.docker.compose.project: "rentscout"
+
   whatsapp-service:
     build:
       context: ./whatsapp-service
@@ -108,7 +129,7 @@ services:
       redis:
         condition: service_healthy
       n8n:
-        condition: service_healthy
+        condition: service_started
     volumes:
       - ./backend:/app
     networks:

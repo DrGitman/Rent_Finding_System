@@ -3,39 +3,58 @@
 import { useEffect, useState } from "react"
 import { AppShell } from "@/components/app-shell"
 import { ControlCenter } from "@/components/control-center"
-import { listings as mockListings, activities as mockActivities, type Activity } from "@/lib/data"
-import { listings as listingsApi, backendListingToFrontend, type BackendListing } from "@/lib/api"
+import { listings as listingsApi, notifications as notifApi, backendListingToFrontend, type BackendNotification } from "@/lib/api"
 import type { Listing } from "@/lib/data"
 import { ListingCard } from "@/components/listing-card"
 import Link from "next/link"
-import { ArrowUpRight, Activity as ActivityIcon, ShieldAlert, Sparkles, Search } from "lucide-react"
+import { ArrowUpRight, Activity as ActivityIcon, ShieldAlert, Sparkles, Search, Bell } from "lucide-react"
+
+interface ActivityItem {
+  id: string
+  kind: "scan" | "evaluate" | "scam" | "match" | "system"
+  message: string
+  detail?: string
+  timestamp: string
+}
+
+function notifToActivity(n: BackendNotification): ActivityItem {
+  const kind: ActivityItem["kind"] =
+    n.notification_type === "scam_alert" ? "scam" :
+    n.notification_type === "new_match" ? "match" :
+    n.notification_type === "scan_complete" ? "scan" :
+    n.notification_type === "evaluation_complete" ? "evaluate" : "system"
+
+  return {
+    id: String(n.id),
+    kind,
+    message: n.title ?? "Activity",
+    detail: n.description ?? undefined,
+    timestamp: new Date(n.created_at).toLocaleString(),
+  }
+}
 
 export default function HomePage() {
   const [top, setTop] = useState<Listing[]>([])
-  const [recent, setRecent] = useState<Activity[]>([])
+  const [recent, setRecent] = useState<ActivityItem[]>([])
 
   useEffect(() => {
-    // Try to load real listings; fall back to mock data
     listingsApi
-      .list({ min_ai_score: 70, limit: 3 })
-      .then((data: BackendListing[]) => {
-        const mapped = data
+      .list({ ai_score_min: 70, limit: 3, sort_by: "-ai_score" })
+      .then((res) => {
+        const mapped = res.listings
           .map(backendListingToFrontend)
           .filter((l) => l.scamRisk !== "high")
           .sort((a, b) => b.aiScore - a.aiScore)
           .slice(0, 3)
-        setTop(mapped.length ? mapped : mockTop)
+        setTop(mapped)
       })
-      .catch(() => setTop(mockTop))
+      .catch(() => {})
 
-    // Activity feed stays on mock data until a global activities endpoint exists
-    setRecent(mockActivities.slice(0, 6))
+    notifApi
+      .list({ limit: 8 })
+      .then((notifs) => setRecent(notifs.map(notifToActivity)))
+      .catch(() => {})
   }, [])
-
-  const mockTop = [...mockListings]
-    .filter((l) => l.scamRisk !== "high")
-    .sort((a, b) => b.aiScore - a.aiScore)
-    .slice(0, 3)
 
   return (
     <AppShell title="Home">
@@ -52,11 +71,19 @@ export default function HomePage() {
               View all <ArrowUpRight className="size-3" />
             </Link>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-            {(top.length ? top : mockTop).map((l) => (
-              <ListingCard key={l.id} listing={l} />
-            ))}
-          </div>
+          {top.length === 0 ? (
+            <div className="rounded-xl border border-border bg-card p-8 text-center">
+              <Sparkles className="size-6 text-muted-foreground mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">No listings yet.</p>
+              <p className="text-xs text-muted-foreground mt-1">Trigger a scan from your agents to discover rentals.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+              {top.map((l) => (
+                <ListingCard key={l.id} listing={l} />
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="space-y-3">
@@ -70,23 +97,21 @@ export default function HomePage() {
             </Link>
           </div>
           <ul className="rounded-xl border border-border bg-card divide-y divide-border">
-            {recent.map((a) => {
+            {recent.length === 0 ? (
+              <li className="p-6 text-center">
+                <Bell className="size-5 text-muted-foreground mx-auto mb-1" />
+                <p className="text-xs text-muted-foreground">No activity yet</p>
+              </li>
+            ) : recent.map((a) => {
               const Icon =
-                a.kind === "scan"
-                  ? Search
-                  : a.kind === "evaluate"
-                    ? ActivityIcon
-                    : a.kind === "scam"
-                      ? ShieldAlert
-                      : a.kind === "match"
-                        ? Sparkles
-                        : ActivityIcon
+                a.kind === "scan" ? Search :
+                a.kind === "evaluate" ? ActivityIcon :
+                a.kind === "scam" ? ShieldAlert :
+                a.kind === "match" ? Sparkles : ActivityIcon
               const tone =
-                a.kind === "scam"
-                  ? "text-danger bg-danger/10"
-                  : a.kind === "match"
-                    ? "text-primary bg-primary/10"
-                    : "text-muted-foreground bg-muted"
+                a.kind === "scam" ? "text-danger bg-danger/10" :
+                a.kind === "match" ? "text-primary bg-primary/10" :
+                "text-muted-foreground bg-muted"
               return (
                 <li key={a.id} className="flex items-start gap-3 p-3.5">
                   <span className={`size-7 rounded-md grid place-items-center shrink-0 ${tone}`}>

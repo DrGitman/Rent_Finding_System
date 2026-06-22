@@ -12,7 +12,7 @@ export type Listing = {
   sqft: number
   image: string
   images: string[]
-  source: "Facebook Marketplace" | "Zillow" | "Craigslist" | "WhatsApp Group" | "Telegram" | "Trulia"
+  source: "Facebook Marketplace" | "Zillow" | "Craigslist" | "WhatsApp Group" | "Telegram" | "Trulia" | "Property24 Namibia" | "PropertyNews Namibia" | "MyProperty Namibia" | "Right Move Windhoek"
   aiScore: number // 0-100
   scamRisk: ScamRisk
   marketDelta: number // negative = below market, positive = above
@@ -22,6 +22,7 @@ export type Listing = {
   foundAt: string
   lat: number
   lng: number
+  url?: string
 }
 
 export const listings: Listing[] = [

@@ -85,7 +85,7 @@ export const users = {
   me: () => get<UserProfile>("/api/users/me"),
   profile: () => get<unknown>("/api/users/profile"),
   updateProfile: (data: Record<string, unknown>) => put<unknown>("/api/users/profile", data),
-  onboarding: (prefs: Record<string, unknown>) => post<unknown>("/api/users/onboarding", prefs),
+  onboarding: (prefs: Record<string, unknown>) => post<unknown>("/api/users/profile/onboarding", prefs),
 }
 
 // ─── listings ────────────────────────────────────────────────────────────────
@@ -109,10 +109,27 @@ export interface ListingsParams {
   source?: string
   min_price?: number
   max_price?: number
-  min_ai_score?: number
-  max_scam_risk?: number
+  ai_score_min?: number
+  scam_risk_max?: number
   limit?: number
   offset?: number
+  sort_by?: string
+}
+
+export interface ListingsResponse {
+  total: number
+  limit: number
+  offset: number
+  listings: BackendListing[]
+}
+
+export interface ListingStats {
+  total_listings: number
+  avg_price: number
+  avg_ai_score: number
+  avg_scam_risk: number
+  high_risk_count: number
+  evaluated_count: number
 }
 
 export const listings = {
@@ -122,10 +139,11 @@ export const listings = {
       if (v !== undefined && v !== null) qs.set(k, String(v))
     })
     const query = qs.toString() ? `?${qs}` : ""
-    return get<BackendListing[]>(`/api/listings${query}`)
+    return get<ListingsResponse>(`/api/listings${query}`)
   },
-  get: (id: number) => get<BackendListing>(`/api/listings/${id}`),
-  stats: () => get<unknown>("/api/listings/stats"),
+  get: (id: number | string) => get<BackendListing>(`/api/listings/${id}`),
+  stats: () => get<ListingStats>("/api/listings/user/statistics"),
+  savedCount: () => get<{ saved_count: number }>("/api/listings/user/saved-count"),
   evaluate: (id: number, data: Record<string, unknown>) =>
     post<unknown>(`/api/listings/${id}/evaluate`, data),
   scamCheck: (id: number, data: Record<string, unknown>) =>
@@ -179,7 +197,7 @@ export const notifications = {
       if (v !== undefined && v !== null) qs.set(k, String(v))
     })
     const query = qs.toString() ? `?${qs}` : ""
-    return get<BackendNotification[]>(`/api/notifications/${query}`)
+    return get<BackendNotification[]>(`/api/notifications${query}`)
   },
   markRead: (id: number) => put<BackendNotification>(`/api/notifications/${id}/read`, {}),
   markUnread: (id: number) => put<BackendNotification>(`/api/notifications/${id}/unread`, {}),
@@ -214,17 +232,47 @@ export const rules = {
 
 // ─── scrapers (on-demand) ────────────────────────────────────────────────────
 
+export interface ScrapeResult {
+  success: boolean
+  source?: string
+  listings: unknown[]
+  count: number
+  saved_count?: number
+  error?: string
+}
+
 export const scrapers = {
   zillow: (city: string, max_pages = 2) =>
-    post<unknown>("/api/scrapers/zillow", { city, max_pages }),
+    post<ScrapeResult>("/api/scrapers/zillow", { city, max_pages }),
   apartments: (city: string) =>
-    post<unknown>("/api/scrapers/apartments", { city }),
+    post<ScrapeResult>("/api/scrapers/apartments", { city }),
   craigslist: (city: string) =>
-    post<unknown>("/api/scrapers/craigslist", { city }),
+    post<ScrapeResult>("/api/scrapers/craigslist", { city }),
   facebook: (city: string) =>
-    post<unknown>("/api/scrapers/facebook", { city }),
+    post<ScrapeResult>("/api/scrapers/facebook", { city }),
   whatsapp: (keywords: string[]) =>
-    post<unknown>("/api/scrapers/whatsapp-groups", { keywords }),
+    post<ScrapeResult>("/api/scrapers/whatsapp-groups", { keywords }),
+  property24: (city: string, max_pages = 2) =>
+    post<ScrapeResult>("/api/scrapers/property24", { city, max_pages }),
+  propertynews: (city: string, max_pages = 2) =>
+    post<ScrapeResult>("/api/scrapers/propertynews", { city, max_pages }),
+  myproperty: (city: string, max_pages = 2) =>
+    post<ScrapeResult>("/api/scrapers/myproperty", { city, max_pages }),
+  rightmove: (max_pages = 2) =>
+    post<ScrapeResult>("/api/scrapers/rightmove", { max_pages }),
+  namibia: (city: string, max_pages = 2, store = false, user_id?: number) =>
+    post<ScrapeResult>("/api/scrapers/namibia", { city, max_pages, store, user_id }),
+}
+
+// ─── integrations ─────────────────────────────────────────────────────────────
+
+export const integrations = {
+  facebookStatus: () =>
+    get<{ connected: boolean; email: string | null }>("/api/integrations/facebook/status"),
+  saveFacebookCredentials: (email: string, password: string) =>
+    post<{ success: boolean; message: string }>("/api/integrations/facebook/credentials", { email, password }),
+  removeFacebookCredentials: () =>
+    del<{ success: boolean }>("/api/integrations/facebook/credentials"),
 }
 
 // ─── type mappers (backend → frontend) ──────────────────────────────────────
@@ -236,27 +284,68 @@ export function backendListingToFrontend(l: BackendListing): Listing {
   const scamRisk: ScamRisk =
     scamNum >= 70 ? "high" : scamNum >= 40 ? "medium" : "low"
 
+  // Parse scam signals and reasoning from notes field
+  const notes = l.notes ?? ""
+  const scamSignals: string[] = []
+  let reasoning = ""
+
+  for (const line of notes.split("\n")) {
+    if (line.startsWith("[⚠️ SCAM ALERT]")) {
+      const flagsMatch = line.match(/Flags: (.+)/)
+      if (flagsMatch) {
+        scamSignals.push(...flagsMatch[1].split(",").map((s) => s.trim()))
+      } else {
+        scamSignals.push(line.replace("[⚠️ SCAM ALERT]", "").trim())
+      }
+    } else if (line.startsWith("[Evaluation]")) {
+      reasoning = line.replace("[Evaluation]", "").trim()
+    } else if (line && !reasoning) {
+      reasoning = line.trim()
+    }
+  }
+
+  // Normalise source name to match Listing union type
+  const sourceMap: Record<string, Listing["source"]> = {
+    facebook_marketplace: "Facebook Marketplace",
+    facebook: "Facebook Marketplace",
+    zillow: "Zillow",
+    craigslist: "Craigslist",
+    whatsapp_group: "WhatsApp Group",
+    whatsapp_groups: "WhatsApp Group",
+    whatsapp: "WhatsApp Group",
+    trulia: "Trulia",
+    property24_na: "Property24 Namibia",
+    propertynews_na: "PropertyNews Namibia",
+    myproperty_na: "MyProperty Namibia",
+    rightmove_windhoek: "Right Move Windhoek",
+  }
+  const normSource =
+    sourceMap[l.source?.toLowerCase() ?? ""] ??
+    (l.source as Listing["source"]) ??
+    "Zillow"
+
   return {
     id: String(l.id),
     title: l.title ?? "Untitled listing",
-    address: l.notes ?? "",
+    address: "",
     neighborhood: "",
     city: "",
     price: Number(l.price ?? 0),
     beds: 0,
     baths: 0,
     sqft: 0,
-    image: l.image_url ?? "/listings/apt-1.jpg",
-    images: l.image_url ? [l.image_url] : ["/listings/apt-1.jpg"],
-    source: (l.source as Listing["source"]) ?? "Zillow",
+    image: l.image_url ?? "",
+    images: l.image_url ? [l.image_url] : [],
+    source: normSource,
     aiScore: l.ai_score ?? 0,
     scamRisk,
     marketDelta: 0,
-    reasoning: l.notes ?? "",
+    reasoning,
     highlights: [],
-    scamSignals: scamNum >= 40 ? [`Scam risk: ${scamNum}%`] : [],
+    scamSignals,
     foundAt: new Date(l.created_at).toLocaleString(),
     lat: 0,
     lng: 0,
+    url: l.url ?? "",
   }
 }

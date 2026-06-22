@@ -230,7 +230,7 @@ export default function ResetPasswordPage() {
           )}
 
           <p className="mt-4 text-center text-sm text-slate-600 dark:text-slate-400">
-            <Link href="/auth" className="text-blue-600 hover:underline dark:text-blue-400">
+            <Link href="/auth" className="text-orange-500 hover:underline dark:text-orange-400">
               Back to login
             </Link>
           </p>

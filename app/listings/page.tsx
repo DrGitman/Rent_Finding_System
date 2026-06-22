@@ -475,7 +475,7 @@ export default function ListingsPage() {
                 <div className="mt-2 text-sm text-gray-700">{l.notes && l.notes.slice(0, 120)}</div>
                 <div className="mt-3">
                   {l.url && (
-                    <a href={l.url} target="_blank" rel="noreferrer" className="text-sm text-blue-600 hover:underline">
+                    <a href={l.url} target="_blank" rel="noreferrer" className="text-sm text-orange-500 hover:underline">
                       View original
                     </a>
                   )}

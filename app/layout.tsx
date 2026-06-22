@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next"
 import { Inter, JetBrains_Mono } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { ThemeProvider } from "@/components/theme-provider"
+import { Toaster } from "@/components/ui/sonner"
 import "./globals.css"
 
 const inter = Inter({
@@ -17,10 +18,13 @@ const jetbrainsMono = JetBrains_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "Renta — Autonomous Rental Intelligence",
+  title: "Rent Scout — AI-Powered Rental Discovery",
   description:
-    "AI agents continuously scan, evaluate and deliver the best rental opportunities for you. Set your preferences and let the system work in the background.",
-  generator: "v0.app",
+    "AI agents continuously scan Facebook Marketplace, Zillow, WhatsApp groups and more to find the best rental opportunities for you.",
+  icons: {
+    icon: "/images/logo-icon.png",
+    apple: "/images/logo-icon.png",
+  },
 }
 
 export const viewport: Viewport = {
@@ -44,6 +48,7 @@ export default function RootLayout({
       <body className="font-sans antialiased">
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
           {children}
+          <Toaster position="top-right" richColors closeButton />
         </ThemeProvider>
         {process.env.NODE_ENV === "production" && <Analytics />}
       </body>

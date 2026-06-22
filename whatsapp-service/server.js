@@ -17,11 +17,23 @@ let initError = null;
 const messageBuffer = new Map();
 const MAX_MESSAGES_PER_GROUP = 500;
 
-// Keywords that suggest a group is accommodation-related
+// Keywords that suggest a group is accommodation/rental-related.
+// Checked against the group NAME (case-insensitive). Add your own local terms here.
 const ACCOM_GROUP_KEYWORDS = [
-  'rent', 'rental', 'flat', 'room', 'house', 'accommodation',
-  'property', 'letting', 'housing', 'apartment', 'student',
-  'lodge', 'place', 'tenant', 'landlord', 'bedsit', 'studio',
+  // English generic
+  'rent', 'rental', 'rentals', 'to let', 'to-let', 'tolet',
+  'flat', 'flats', 'room', 'rooms', 'house', 'houses', 'housing',
+  'accommodation', 'accom', 'apartment', 'apartments', 'property', 'properties',
+  'letting', 'lettings', 'tenant', 'landlord', 'bedsit', 'studio', 'lodge',
+  'commune', 'commune',
+  // SA-specific
+  'huur', 'verhuur',       // Afrikaans rent/letting
+  'kamer', 'kamers',       // Afrikaans room/rooms
+  'woonstel',              // Afrikaans apartment
+  'granny flat', 'wendy',  // common SA terms
+  'bachelor', 'bachelors',
+  'sectional', 'estate',
+  'townhouse', 'cluster',
 ];
 
 // ─── WhatsApp Client ──────────────────────────────────────────────────────────
@@ -81,11 +93,12 @@ client.on('disconnected', (reason) => {
   console.warn('WhatsApp disconnected:', reason);
 });
 
-// Buffer incoming group messages in memory
+// Buffer incoming messages — only from accommodation/rental groups, never DMs
 client.on('message', async (message) => {
   try {
     const chat = await message.getChat();
-    if (!chat.isGroup) return;
+    if (!chat.isGroup) return;                          // skip all DMs & personal chats
+    if (!isAccommodationGroup(chat.name)) return;       // skip non-rental groups
 
     const groupId = chat.id._serialized;
     if (!messageBuffer.has(groupId)) {
@@ -212,7 +225,7 @@ app.post('/search', async (req, res) => {
   const {
     keywords = ['rent', 'flat', 'room', 'house', 'accommodation', 'apartment', 'available', 'letting'],
     days_back = 7,
-    accommodation_only = false,
+    accommodation_only = true,   // always restrict to rental/accommodation groups by default
   } = req.body;
 
   const cutoffTimestamp = Math.floor(Date.now() / 1000) - days_back * 86400;

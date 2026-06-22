@@ -114,6 +114,68 @@ async def list_listings(
         logger.error(f"Error listing listings: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
+@router.get("/user/saved-count")
+async def get_saved_listings_count(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get count of saved listings"""
+    try:
+        count = db.query(SavedListing).filter(SavedListing.user_id == current_user.id).count()
+        return {"saved_count": count}
+    except Exception as e:
+        logger.error(f"Error getting saved count: {str(e)}")
+        return {"saved_count": 0}
+
+@router.get("/user/top-sources")
+async def get_top_sources(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    limit: int = Query(5, ge=1, le=20)
+):
+    """Get listings grouped by source"""
+    try:
+        all_listings = db.query(SavedListing).filter(SavedListing.user_id == current_user.id).all()
+        source_counts: Dict[str, int] = {}
+        for listing in all_listings:
+            source_counts[listing.source] = source_counts.get(listing.source, 0) + 1
+        top_sources = sorted(source_counts.items(), key=lambda x: x[1], reverse=True)[:limit]
+        return {"sources": [{"source": s, "count": c} for s, c in top_sources]}
+    except Exception as e:
+        logger.error(f"Error getting top sources: {str(e)}")
+        return {"sources": []}
+
+@router.get("/user/statistics")
+async def get_listing_statistics(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get listing statistics for user"""
+    try:
+        all_listings = db.query(SavedListing).filter(SavedListing.user_id == current_user.id).all()
+        if not all_listings:
+            return {"total_listings": 0, "avg_price": 0, "avg_ai_score": 0,
+                    "avg_scam_risk": 0, "high_risk_count": 0, "evaluated_count": 0}
+        total = len(all_listings)
+        prices = [float(l.price) for l in all_listings if l.price is not None]
+        avg_price = sum(prices) / len(prices) if prices else 0
+        evaluated = [l for l in all_listings if l.ai_score is not None]
+        avg_ai_score = sum(l.ai_score for l in evaluated) / len(evaluated) if evaluated else 0
+        scam_assessed = [l for l in all_listings if l.scam_risk is not None]
+        avg_scam_risk = sum(l.scam_risk for l in scam_assessed) / len(scam_assessed) if scam_assessed else 0
+        high_risk = len([l for l in all_listings if l.scam_risk and l.scam_risk > 70])
+        return {
+            "total_listings": total,
+            "avg_price": round(avg_price, 2),
+            "avg_ai_score": round(avg_ai_score, 1),
+            "avg_scam_risk": round(avg_scam_risk, 1),
+            "high_risk_count": high_risk,
+            "evaluated_count": len(evaluated)
+        }
+    except Exception as e:
+        logger.error(f"Error getting statistics: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
 @router.get("/{listing_id}")
 async def get_listing(
     listing_id: int,
@@ -313,92 +375,3 @@ async def delete_listing(
         logger.error(f"Error deleting listing: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.get("/user/saved-count")
-async def get_saved_listings_count(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Get count of saved listings"""
-    try:
-        count = db.query(SavedListing).filter(SavedListing.user_id == current_user.id).count()
-        return {
-            "saved_count": count
-        }
-    except Exception as e:
-        logger.error(f"Error getting saved count: {str(e)}")
-        return {
-            "saved_count": 0
-        }
-
-@router.get("/user/top-sources")
-async def get_top_sources(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-    limit: int = Query(5, ge=1, le=20)
-):
-    """Get listings grouped by source"""
-    try:
-        listings = db.query(SavedListing).filter(SavedListing.user_id == current_user.id).all()
-        
-        source_counts = {}
-        for listing in listings:
-            source_counts[listing.source] = source_counts.get(listing.source, 0) + 1
-        
-        # Sort by count and limit
-        top_sources = sorted(source_counts.items(), key=lambda x: x[1], reverse=True)[:limit]
-        
-        return {
-            "sources": [
-                {
-                    "source": source,
-                    "count": count
-                }
-                for source, count in top_sources
-            ]
-        }
-    except Exception as e:
-        logger.error(f"Error getting top sources: {str(e)}")
-        return {
-            "sources": []
-        }
-
-@router.get("/user/statistics")
-async def get_listing_statistics(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Get listing statistics for user"""
-    try:
-        listings = db.query(SavedListing).filter(SavedListing.user_id == current_user.id).all()
-        
-        if not listings:
-            return {
-                "total_listings": 0,
-                "avg_price": 0,
-                "avg_ai_score": 0,
-                "avg_scam_risk": 0,
-                "high_risk_count": 0,
-                "evaluated_count": 0
-            }
-        
-        total = len(listings)
-        avg_price = sum(l.price for l in listings) / total if total > 0 else 0
-        evaluated = [l for l in listings if l.ai_score is not None]
-        avg_ai_score = sum(l.ai_score for l in evaluated) / len(evaluated) if evaluated else 0
-        
-        scam_assessed = [l for l in listings if l.scam_risk is not None]
-        avg_scam_risk = sum(l.scam_risk for l in scam_assessed) / len(scam_assessed) if scam_assessed else 0
-        
-        high_risk = len([l for l in listings if l.scam_risk and l.scam_risk > 70])
-        
-        return {
-            "total_listings": total,
-            "avg_price": round(avg_price, 2),
-            "avg_ai_score": round(avg_ai_score, 1),
-            "avg_scam_risk": round(avg_scam_risk, 1),
-            "high_risk_count": high_risk,
-            "evaluated_count": len(evaluated)
-        }
-    except Exception as e:
-        logger.error(f"Error getting statistics: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))

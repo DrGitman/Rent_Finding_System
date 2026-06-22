@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from api.routers import auth, users, agents, rules, notifications, webhooks, scrapers, validators, evaluators, listings
+from api.routers import auth, users, agents, rules, notifications, webhooks, scrapers, validators, evaluators, listings, integrations
 from core.config import settings
 from core.database import engine, Base
 
@@ -43,6 +43,7 @@ app.include_router(scrapers.router, prefix="/api/scrapers", tags=["Web Scrapers"
 app.include_router(validators.router, prefix="/api/validators", tags=["Validators"])
 app.include_router(evaluators.router, prefix="/api/evaluators", tags=["Evaluators"])
 app.include_router(listings.router, prefix="/api/listings", tags=["Listings"])
+app.include_router(integrations.router, prefix="/api/integrations", tags=["Integrations"])
 
 @app.get("/health")
 async def health_check():
